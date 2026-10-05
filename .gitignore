@@ -1,0 +1,6 @@
+# Type definitions for the noctalia Luau API. Not ours to redistribute — the
+# official-plugins repo ships no license file. Fetch a local copy for luau-lsp:
+#
+#   git --git-dir=~/.local/state/noctalia/plugins/sources/official/repo/.git \
+#       show HEAD:noctalia.d.luau > noctalia.d.luau
+noctalia.d.luau
