@@ -87,8 +87,21 @@ local function refreshClock()
 	use24h = noctalia.timeFormat():find("%%H") ~= nil
 end
 
-local function logoPath(): string
-	return if noctalia.isDarkMode() then "assets/basecamp-light.svg" else "assets/basecamp-dark.svg"
+-- Same glyph as the bar, so both surfaces draw the mark from one source and
+-- take the palette. Falls back to a Tabler glyph if the font did not load.
+local iconFamily = noctalia.loadFont("assets/basecamp-icon.ttf")
+
+local function logo()
+	if iconFamily == nil then
+		return ui.glyph({ name = "mountain", size = 22, color = "on_surface" })
+	end
+	return ui.label({
+		text = utf8.char(0xE000),
+		fontFamily = iconFamily,
+		fontSize = 22,
+		baseline = "pictographic",
+		color = "on_surface",
+	})
 end
 
 local function accountOptions()
@@ -153,7 +166,7 @@ end
 local function header()
 	local isError = not actionStatusFresh() and (summary.error or "") ~= ""
 	return ui.row({ gap = 9, align = "center" }, {
-		ui.image({ path = logoPath(), width = 22, height = 22, fit = "contain" }),
+		logo(),
 		ui.column({ gap = 1, flexGrow = 1 }, {
 			ui.label({ text = tr("title"), fontSize = 15, fontWeight = "bold" }),
 			ui.label({
