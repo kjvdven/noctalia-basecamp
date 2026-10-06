@@ -192,6 +192,17 @@ local function publish()
 	noctalia.state.set(SUMMARY_KEY, summary)
 end
 
+-- Only the auth probe decides signed-in state. A data call (accounts,
+-- notifications) can return auth_required on a transient 401 and that must not
+-- flip the bar to "sign in" for the next ten minutes; it is a status-line error
+-- like any other, and the probe at the start of the next refresh settles it.
+local function setAuthenticated(value: boolean, source: string)
+	if summary.authenticated and not value then
+		noctalia.log(`basecamp: signed out according to {source}`)
+	end
+	summary.authenticated = value
+end
+
 -- ── Refresh state machine ───────────────────────────────────────────────────
 --
 -- One chain at a time, sequential per account. Sequential rather than parallel
@@ -350,15 +361,7 @@ function fetchNextAccount(gen: number)
 		elseif decoded.ok ~= nil then
 			sawHeader = true
 			if decoded.ok ~= true then
-				if decoded.code == "auth_required" then
-					-- Credentials are shared across accounts, so every remaining
-					-- account would fail identically. Stop rather than finish as
-					-- though the refresh completed with partial data.
-					done = true
-					summary.authenticated = false
-					stopRefresh(gen)
-					return
-				end
+				-- auth_required included: see setAuthenticated.
 				addPartialError(account.name, model.concise(decoded.error, noctalia.tr("error.notifications")))
 			end
 		elseif type(decoded.item) == "table" then
@@ -384,11 +387,7 @@ local function onAccounts(gen: number, result)
 	local decoded, envelope = decode(result)
 
 	if not envelope.ok or result.exitCode ~= 0 or result.timedOut then
-		if envelope.code == "auth_required" then
-			summary.authenticated = false
-			stopRefresh(gen)
-			return
-		end
+		-- auth_required included: see setAuthenticated.
 		local stderr = model.trim(result.stderr)
 		summary.error =
 			model.concise(if stderr ~= "" then stderr else envelope.error, noctalia.tr("error.accounts"))
@@ -455,7 +454,7 @@ local function onAuth(gen: number, result)
 	-- retry alive so a probe that fails mid-install recovers on its own.
 	if not envelope.ok or type(envelope.data) ~= "table" then
 		if envelope.code == "auth_required" then
-			summary.authenticated = false
+			setAuthenticated(false, "auth probe")
 			summary.probed = true
 			summary.probeError = false
 			stopRefresh(gen)
@@ -476,7 +475,10 @@ local function onAuth(gen: number, result)
 
 	-- An expired token is functionally signed out. The original did not check
 	-- this and would have failed every account fetch instead.
-	summary.authenticated = envelope.data.authenticated == true and envelope.data.expired ~= true
+	setAuthenticated(
+		envelope.data.authenticated == true and envelope.data.expired ~= true,
+		if envelope.data.expired == true then "auth probe (token expired)" else "auth probe"
+	)
 	summary.probed = true
 	summary.probeError = false
 	summary.error = ""
