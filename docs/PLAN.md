@@ -828,10 +828,12 @@ gap for every plugin, and it is the one thing here that a plugin genuinely canno
 
 ## Attribution
 
-`assets/basecamp-*.svg` comes from the MIT-licensed source repository (© 2026 37signals LLC),
-with its provenance comment preserved in the file; the second variant is the same geometry with a
-different `fill`. The Basecamp word mark remains the property of 37signals — both READMEs must
-state that this is an unofficial, unaffiliated plugin and link to the original.
+`assets/basecamp-light.svg` comes from the MIT-licensed source repository (© 2026 37signals LLC),
+with its provenance comment preserved in the file. `assets/basecamp-icon.ttf` is that mark as a
+single glyph at U+E000, built with fontforge, because the host tints font glyphs and not images;
+the dark SVG variant went with the switch. The Basecamp word mark remains the property of
+37signals — both READMEs must state that this is an unofficial, unaffiliated plugin and link to
+the original.
 
 ## Open questions
 

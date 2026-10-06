@@ -7,12 +7,17 @@
 --   barWidget.setImage(...)      renders the SVG, and does NOT tint it
 --   barWidget.setColor(role)     colours the text, and composes with setImage
 --
--- A Tabler glyph instead of the logo, then: the host's own bar icons are font
--- glyphs and take the palette, while the white SVG sat next to them looking
--- yellow. The Basecamp mark stays in the panel header, where ui.image is fine.
+-- The logo as a font glyph, then: the host's own bar icons are font glyphs
+-- and take the palette, while the white SVG sat next to them looking yellow.
+-- assets/basecamp-icon.ttf holds the 37signals mark at U+E000 (built from
+-- assets/basecamp-light.svg with fontforge); setText renders it like any text,
+-- so setColor colours it. The count follows in the same string.
 --
 -- Every Basecamp call lives in the service, so several bars on several monitors
 -- share one poller. This entry only reads state and asks for refreshes.
+
+local ICON = utf8.char(0xE000)
+local iconFamily = nil
 
 local SUMMARY_KEY = "basecamp.summary"
 local REQUEST_KEY = "basecamp.request"
@@ -134,15 +139,20 @@ end
 local function render()
 	local unread = unreadForSelection()
 
-	barWidget.setGlyph("mountain")
-
-	-- A vertical bar has no room for a number beside a 16px logo.
+	-- A vertical bar has no room for a number beside the logo.
 	local showCount = noctalia.getConfig("show_count") ~= false and not barWidget.isVertical()
-	barWidget.setText(if showCount and unread > 0 then tostring(unread) else "")
+	local count = if showCount and unread > 0 then ` {unread}` else ""
+	if iconFamily ~= nil then
+		barWidget.setText(ICON .. count)
+	else
+		-- Font failed to load: fall back to a Tabler glyph so the bar is never blank.
+		barWidget.setGlyph("mountain")
+		barWidget.setText(count)
+	end
 
 	-- A setup problem is an error; unread is just news, so it takes the accent.
-	-- Glyph and count colour together: a lit-up mountain reads better than a
-	-- grey one with a blue number beside it.
+	-- Logo and count colour together: a lit-up mark reads better than a grey one
+	-- with a blue number beside it.
 	local role = if needsSetup() then "error" elseif unread > 0 then "primary" else "on_surface"
 	barWidget.setColor(role)
 	barWidget.setGlyphColor(role)
@@ -172,6 +182,14 @@ noctalia.state.watch(PANEL_OPEN_KEY, function(value)
 	panelOpen = value == true
 	render()
 end)
+
+local family, fontError = noctalia.loadFont("assets/basecamp-icon.ttf")
+if family ~= nil then
+	iconFamily = family
+	barWidget.setFont(family, "inkCentered")
+else
+	noctalia.log(`basecamp: icon font not loaded: {tostring(fontError)}`)
+end
 
 summary = noctalia.state.get(SUMMARY_KEY) or summary
 panelOpen = noctalia.state.get(PANEL_OPEN_KEY) == true

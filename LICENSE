@@ -25,9 +25,9 @@ SOFTWARE.
 
 Third-party notices
 
-basecamp/assets/basecamp-light.svg and basecamp/assets/basecamp-dark.svg are
-derived from basecamp.svg in https://github.com/basecamp/omarchy-basecamp-plugin,
-which is MIT licensed:
+basecamp/assets/basecamp-light.svg, and basecamp/assets/basecamp-icon.ttf built
+from it, are derived from basecamp.svg in
+https://github.com/basecamp/omarchy-basecamp-plugin, which is MIT licensed:
 
     MIT License
 

@@ -26,6 +26,10 @@
   "list": {
     "load_more": "Load more"
   },
+  "section": {
+    "new": "New for you",
+    "previous": "Previous notifications"
+  },
   "empty": {
     "loading": "Loading…",
     "caught_up": "You're all caught up."

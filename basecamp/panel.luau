@@ -87,8 +87,21 @@ local function refreshClock()
 	use24h = noctalia.timeFormat():find("%%H") ~= nil
 end
 
-local function logoPath(): string
-	return if noctalia.isDarkMode() then "assets/basecamp-light.svg" else "assets/basecamp-dark.svg"
+-- Same glyph as the bar, so both surfaces draw the mark from one source and
+-- take the palette. Falls back to a Tabler glyph if the font did not load.
+local iconFamily = noctalia.loadFont("assets/basecamp-icon.ttf")
+
+local function logo()
+	if iconFamily == nil then
+		return ui.glyph({ name = "mountain", size = 22, color = "on_surface" })
+	end
+	return ui.label({
+		text = utf8.char(0xE000),
+		fontFamily = iconFamily,
+		fontSize = 22,
+		baseline = "pictographic",
+		color = "on_surface",
+	})
 end
 
 local function accountOptions()
@@ -96,13 +109,30 @@ local function accountOptions()
 end
 
 -- Unread first, then read, both newest first: the two former tabs stacked.
+-- Also returns where the read block starts, for the section heading.
 local function listItems()
 	local accountId = summary.accountId or ""
 	local out = model.filterNotifications(items, accountId, "unread")
+	local firstRead = #out + 1
 	for _, item in ipairs(model.filterNotifications(items, accountId, "previous")) do
 		table.insert(out, item)
 	end
-	return out
+	return out, firstRead
+end
+
+-- Section heading as Basecamp draws it: "New for you" in the accent, "Previous
+-- notifications" plain with air above it. A spacer rather than padding so the
+-- air sits only on top.
+local function sectionHeading(key: string, accent: boolean, spaceAbove: number)
+	return ui.column({ key = `heading-{key}`, paddingH = 8 }, {
+		ui.spacer({ height = spaceAbove }),
+		ui.label({
+			text = tr(key),
+			fontSize = 12,
+			fontWeight = "bold",
+			color = if accent then "primary" else "on_surface",
+		}),
+	})
 end
 
 -- ── Pieces ──────────────────────────────────────────────────────────────────
@@ -136,7 +166,7 @@ end
 local function header()
 	local isError = not actionStatusFresh() and (summary.error or "") ~= ""
 	return ui.row({ gap = 9, align = "center" }, {
-		ui.image({ path = logoPath(), width = 22, height = 22, fit = "contain" }),
+		logo(),
 		ui.column({ gap = 1, flexGrow = 1 }, {
 			ui.label({ text = tr("title"), fontSize = 15, fontWeight = "bold" }),
 			ui.label({
@@ -331,13 +361,18 @@ local function emptyState()
 end
 
 local function body()
-	local all = listItems()
+	local all, firstRead = listItems()
 	if #all == 0 then
 		return emptyState()
 	end
 
 	local rows = {}
 	for index = 1, math.min(#all, visibleCount) do
+		if index == 1 and firstRead > 1 then
+			table.insert(rows, sectionHeading("section.new", true, 0))
+		elseif index == firstRead then
+			table.insert(rows, sectionHeading("section.previous", false, if firstRead > 1 then 14 else 0))
+		end
 		table.insert(rows, row(all[index], index))
 	end
 	if #all > visibleCount or summary.canLoadMore == true then
