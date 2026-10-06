@@ -186,7 +186,7 @@ end)
 local family, fontError = noctalia.loadFont("assets/basecamp-icon.ttf")
 if family ~= nil then
 	iconFamily = family
-	barWidget.setFont(family, "pictographic")
+	barWidget.setFont(family, "inkCentered")
 else
 	noctalia.log(`basecamp: icon font not loaded: {tostring(fontError)}`)
 end
