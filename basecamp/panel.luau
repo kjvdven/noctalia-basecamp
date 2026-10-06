@@ -96,13 +96,30 @@ local function accountOptions()
 end
 
 -- Unread first, then read, both newest first: the two former tabs stacked.
+-- Also returns where the read block starts, for the section heading.
 local function listItems()
 	local accountId = summary.accountId or ""
 	local out = model.filterNotifications(items, accountId, "unread")
+	local firstRead = #out + 1
 	for _, item in ipairs(model.filterNotifications(items, accountId, "previous")) do
 		table.insert(out, item)
 	end
-	return out
+	return out, firstRead
+end
+
+-- Section heading as Basecamp draws it: "New for you" in the accent, "Previous
+-- notifications" plain with air above it. A spacer rather than padding so the
+-- air sits only on top.
+local function sectionHeading(key: string, accent: boolean, spaceAbove: number)
+	return ui.column({ key = `heading-{key}`, paddingH = 8 }, {
+		ui.spacer({ height = spaceAbove }),
+		ui.label({
+			text = tr(key),
+			fontSize = 12,
+			fontWeight = "bold",
+			color = if accent then "primary" else "on_surface",
+		}),
+	})
 end
 
 -- ── Pieces ──────────────────────────────────────────────────────────────────
@@ -331,13 +348,18 @@ local function emptyState()
 end
 
 local function body()
-	local all = listItems()
+	local all, firstRead = listItems()
 	if #all == 0 then
 		return emptyState()
 	end
 
 	local rows = {}
 	for index = 1, math.min(#all, visibleCount) do
+		if index == 1 and firstRead > 1 then
+			table.insert(rows, sectionHeading("section.new", true, 0))
+		elseif index == firstRead then
+			table.insert(rows, sectionHeading("section.previous", false, if firstRead > 1 then 14 else 0))
+		end
 		table.insert(rows, row(all[index], index))
 	end
 	if #all > visibleCount or summary.canLoadMore == true then
