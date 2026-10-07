@@ -10,6 +10,8 @@ A port of 37signals' [Omarchy Basecamp plugin](https://github.com/basecamp/omarc
 to Noctalia's Luau plugin API. Unofficial and unaffiliated; the Basecamp mark
 belongs to 37signals.
 
+![The Basecamp panel: unread notifications on top, previous ones below, account filter in the header](docs/panel.png)
+
 The plugin's own page, with usage, settings and IPC, is
 [`basecamp/README.md`](basecamp/README.md).
 
