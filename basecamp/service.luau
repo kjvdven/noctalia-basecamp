@@ -11,9 +11,9 @@
 -- noctalia API at all and is unit-tested standalone (tests/model_test.luau).
 -- This entry is the part that cannot be: subprocesses, timers and state.
 --
--- Step 4 status: probe -> accounts -> notifications -> publish, with the
--- generation guard and the auth_required short-circuit. Mark-read, opening a
--- notification, filters and the setup flow land in steps 6, 7 and 9.
+-- probe -> accounts -> notifications -> publish, with a generation guard and
+-- the auth_required short-circuit; then mark-read, open, filters and the
+-- sign-in flow as requests from the panel.
 
 local model = require("./model.luau")
 
@@ -31,6 +31,11 @@ local OPEN_TIMEOUT_MS = 10000
 -- always calls back, but the notifications stream has no exit signal: if
 -- basecamp hangs, its {end} line never comes and this is what frees the spinner.
 local REFRESH_WATCHDOG_MS = 120000
+-- A sign-in the user walked away from: the button comes back after this even
+-- if processMatches never reports the terminal gone.
+local SETUP_STALE_MS = 300000
+-- Give the terminal time to start before its absence counts as "closed".
+local SETUP_GRACE_MS = 5000
 
 -- ── Settings ────────────────────────────────────────────────────────────────
 -- getConfig returns whatever is stored, which is not necessarily the declared
@@ -201,6 +206,9 @@ local function setAuthenticated(value: boolean, source: string)
 		noctalia.log(`basecamp: signed out according to {source}`)
 	end
 	summary.authenticated = value
+	if value then
+		summary.setupRunning = false
+	end
 end
 
 -- ── Refresh state machine ───────────────────────────────────────────────────
@@ -567,9 +575,37 @@ end
 -- interval, "probe" runs the two probe commands and stops there. One function
 -- rather than three actions: all three share the whole chain and differ only in
 -- their start condition and stopping point.
+-- The flock lockfile of the original, observed instead of written: the button
+-- stays disabled while a `basecamp auth login` process is alive, and comes back
+-- when it is gone or after SETUP_STALE_MS, so a closed terminal never locks the
+-- user out. Checked on every refresh start because the panel probes every 3 s
+-- while the card is up.
+local setupStartedMs = 0
+
+local function checkSetupRunning()
+	if summary.setupRunning ~= true then
+		return
+	end
+	local age = noctalia.nowMs() - setupStartedMs
+	if age > SETUP_STALE_MS then
+		summary.setupRunning = false
+		return
+	end
+	if age < SETUP_GRACE_MS then
+		return
+	end
+	noctalia.processMatches(function(matched: boolean)
+		if summary.setupRunning == true and not matched then
+			summary.setupRunning = false
+			publish()
+		end
+	end, "basecamp", "auth", "login")
+end
+
 local function startRefresh(mode: string?)
 	local wanted = mode or "full"
 
+	checkSetupRunning()
 	if refreshing then
 		return
 	end
@@ -728,6 +764,37 @@ local function markRead(accountId: any, ids: any)
 	runNextRead()
 end
 
+-- Returns false when nothing was launched, so the caller can skip follow-ups.
+local function openUrl(url: string): boolean
+	local argv = openArgv(url)
+	if argv == nil then
+		summary.error = noctalia.tr("error.open")
+		setActionStatus(summary.error)
+		publish()
+		return false
+	end
+
+	-- With a callback rather than fire-and-forget, so a broken open_command
+	-- reports itself instead of failing silently.
+	local started = noctalia.runAsync(argv, function(result)
+		if result.exitCode ~= 0 or result.timedOut then
+			local stderr = model.trim(result.stderr)
+			noctalia.log(`basecamp: open failed exit={result.exitCode} stderr="{stderr}"`)
+			summary.error = model.concise(stderr, noctalia.tr("error.open"))
+			setActionStatus(summary.error)
+			publish()
+		end
+	end, OPEN_TIMEOUT_MS)
+
+	if not started then
+		summary.error = noctalia.tr("error.open")
+		setActionStatus(summary.error)
+		publish()
+		return false
+	end
+	return true
+end
+
 local function openItem(accountId: any, id: any)
 	if type(accountId) ~= "string" or type(id) ~= "string" then
 		return
@@ -741,37 +808,43 @@ local function openItem(accountId: any, id: any)
 		return
 	end
 
-	if item.url ~= "" then
-		local argv = openArgv(item.url)
-		if argv == nil then
-			summary.error = noctalia.tr("error.open")
-			setActionStatus(summary.error)
-			publish()
-			return
-		end
-
-		-- With a callback rather than fire-and-forget, so a broken open_command
-		-- reports itself instead of failing silently.
-		local started = noctalia.runAsync(argv, function(result)
-			if result.exitCode ~= 0 or result.timedOut then
-				local stderr = model.trim(result.stderr)
-				noctalia.log(`basecamp: open failed exit={result.exitCode} stderr="{stderr}"`)
-				summary.error = model.concise(stderr, noctalia.tr("error.open"))
-				setActionStatus(summary.error)
-				publish()
-			end
-		end, OPEN_TIMEOUT_MS)
-
-		if not started then
-			summary.error = noctalia.tr("error.open")
-			setActionStatus(summary.error)
-			publish()
-			return
-		end
+	if item.url ~= "" and not openUrl(item.url) then
+		return
 	end
 
 	if item.unread and markReadOnOpen() then
 		markRead(accountId, { id })
+	end
+end
+
+-- ── Setup ───────────────────────────────────────────────────────────────────
+-- The panel sends intent, never a command or a url: the service derives both
+-- from its own probe results, so a stale or forged request cannot run anything
+-- the current state would not.
+
+local function setupPlan()
+	return model.setupPlan(summary.installed == true, summary.supported == true, summary.authenticated == true)
+end
+
+local function runSetup()
+	local plan = setupPlan()
+	if not plan.runsInTerminal or plan.command == "" or summary.setupRunning == true then
+		return
+	end
+	summary.setupRunning = true
+	setupStartedMs = noctalia.nowMs()
+	if not noctalia.runInTerminal(plan.command) then
+		summary.setupRunning = false
+		summary.error = noctalia.tr("error.no_terminal")
+		setActionStatus(summary.error)
+	end
+	publish()
+end
+
+local function openDocs()
+	local plan = setupPlan()
+	if plan.docUrl ~= "" then
+		openUrl(plan.docUrl)
 	end
 end
 
@@ -833,8 +906,11 @@ noctalia.state.watch(REQUEST_KEY, function(request)
 		openItem(request.accountId, request.id)
 	elseif action == "mark_read" then
 		markRead(request.accountId, request.ids)
+	elseif action == "run_setup" then
+		runSetup()
+	elseif action == "open_docs" then
+		openDocs()
 	else
-		-- TODO(step 9): run_setup.
 		noctalia.log(`basecamp: unhandled request "{action}"`)
 	end
 end)

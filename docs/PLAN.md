@@ -437,7 +437,8 @@ first press sets `cursorActive` and selects row 1, as in `Panel.qml:193-200`), `
 with a held-key guard, because `onKey` delivers auto-repeat — otherwise one press of `r` fires
 three refreshes. Escape is not declared; the host always reserves it.
 
-**Keeping the selection in view: we don't.** There is no scroll-to-index, and the known
+**Keeping the selection in view: we don't.** There is no scroll-to-index (requested upstream as
+[noctalia#4756](https://github.com/noctalia-dev/noctalia/issues/4756)), and the known
 workaround — rendering a ~7-row window in keyboard mode and sliding it
 (`procmon/panel.luau:36-39`) — costs ~60 lines, a `ROWS_PER_PAGE` constant that cannot be
 derived from any API, and one visible jump when switching modes. **Deliberate choice: render
