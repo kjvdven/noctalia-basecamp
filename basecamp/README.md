@@ -33,6 +33,8 @@ beside it. Hover for the unread total, the selected account and the last check.
 - With more than one account, the dropdown in the panel header filters the
   list and the bar count to one account.
 - **Load more** at the bottom fetches the next page from Basecamp.
+- Keyboard, while the panel is open: Up and Down walk the list, Return opens
+  the selected row, Left and Right switch account, `r` checks Basecamp now.
 
 Toggle the panel from a keybind or script:
 
@@ -40,9 +42,11 @@ Toggle the panel from a keybind or script:
 noctalia msg panel-toggle kjvdven/basecamp:panel
 ```
 
-When the CLI is missing, too old, or signed out, the bar mark stays uncoloured
-and its tooltip says what to do. Run `basecamp auth login` in a terminal and the
-plugin picks the session up on its next check.
+When the CLI is missing, too old, or signed out, the bar mark turns red and the
+panel shows a setup card instead of the list. **Sign in to Basecamp** opens a
+terminal running `basecamp auth login`; the install and update buttons open the
+CLI's instructions in the browser. The card disappears by itself once the CLI
+answers.
 
 ## Settings
 
