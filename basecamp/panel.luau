@@ -4,9 +4,9 @@
 -- Reads `basecamp.summary` and `basecamp.items`, and asks the service for work
 -- through `basecamp.request`. It never runs the CLI itself.
 --
--- Step 7 status: header, account filter, one list (unread on top, then read)
--- with a Load more button, empty states and the status line. The setup card
--- lands in step 9.
+-- Header, account filter, one list (unread on top, then read) with a Load more
+-- button, empty states, the status line, keyboard navigation, and a setup card
+-- when the CLI is missing, too old, or signed out.
 
 local model = require("./model.luau")
 
@@ -24,6 +24,11 @@ local PANEL_OPEN_KEY = "basecamp.panelOpen"
 -- service stamps it and this side lets it decay, because the panel is the thing
 -- with second ticks.
 local ACTION_STATUS_MS = 2200
+-- How long the copy button reads "Copied".
+local COPIED_MS = 1500
+-- Seconds between probes while the setup card is up, so a finished sign-in or
+-- a fresh install is noticed without a manual refresh.
+local SETUP_RETRY_TICKS = 3
 
 -- Rows shown per "Load more". Panel-local like the cursor: the service only
 -- hears from the panel once the held items run out and a CLI page is needed.
@@ -58,6 +63,11 @@ local use24h = false
 local phraseIndex = 0
 local phraseTicks = 0
 local statusWasFresh = false
+local retryTicks = 0
+local copiedAtMs = 0
+local copiedShown = false
+-- onKey delivers auto-repeat; a held `r` must refresh once, not every tick.
+local heldChord = nil
 local seq = 0
 
 local function tr(key: string, subst: any?): string
@@ -106,6 +116,16 @@ end
 
 local function accountOptions()
 	return model.accountOptions(summary.accounts or {}, tr("account.all"))
+end
+
+local function setupPlan()
+	return model.setupPlan(summary.installed == true, summary.supported == true, summary.authenticated == true)
+end
+
+-- The card also stays up on a probe error, so the retry keeps going, but it
+-- only renders content when the plan says what is wrong.
+local function needsSetup(): boolean
+	return summary.probed == true and setupPlan().needed
 end
 
 -- Unread first, then read, both newest first: the two former tabs stacked.
@@ -347,6 +367,54 @@ local function row(item, index: number)
 	}, children)
 end
 
+local function copiedFresh(): boolean
+	return copiedAtMs > 0 and noctalia.nowMs() - copiedAtMs < COPIED_MS
+end
+
+-- Replaces filter and list while the CLI is missing, too old, or signed out.
+-- Install and update open the CLI docs: there is no portable package command
+-- across distributions, so guessing one would fail on most machines.
+local function setupCard()
+	local plan = setupPlan()
+	local running = summary.setupRunning == true
+	local children = {
+		ui.glyph({ name = "campfire", size = 30, color = "outline" }),
+		ui.label({ text = tr(plan.titleKey), fontSize = 13, fontWeight = "bold", textAlign = "center" }),
+		ui.label({
+			text = model.formatTemplate(tr(plan.bodyKey), { version = summary.cliVersion or "" }),
+			fontSize = 11,
+			color = "on_surface_variant",
+			textAlign = "center",
+			maxLines = 4,
+		}),
+		ui.button({
+			key = "setup-action",
+			text = tr(if running then "setup.running" else plan.buttonKey),
+			variant = "primary",
+			controlSize = "sm",
+			enabled = not running,
+			onClick = "onSetupClicked",
+		}),
+	}
+	if plan.command ~= "" then
+		table.insert(
+			children,
+			ui.row({ gap = 6, align = "center" }, {
+				ui.label({ text = tr("setup.or_run"), fontSize = 10, color = "on_surface_variant" }),
+				ui.label({ text = plan.command, fontSize = 10, fontFamily = "monospace" }),
+				ui.button({
+					key = "setup-copy",
+					text = tr(if copiedFresh() then "setup.copied" else "setup.copy"),
+					variant = "ghost",
+					controlSize = "sm",
+					onClick = "onCopyCommand",
+				}),
+			})
+		)
+	end
+	return ui.column({ flexGrow = 1, align = "center", justify = "center", gap = 10, paddingH = 16 }, children)
+end
+
 local function emptyState()
 	local key
 	if (summary.updatedAtMs or 0) == 0 and summary.refreshing == true then
@@ -401,11 +469,15 @@ local function render()
 
 	local children = { header(), ui.separator({}) }
 
-	local accounts = accountFilter()
-	if accounts ~= nil then
-		table.insert(children, accounts)
+	if needsSetup() then
+		table.insert(children, setupCard())
+	else
+		local accounts = accountFilter()
+		if accounts ~= nil then
+			table.insert(children, accounts)
+		end
+		table.insert(children, body())
 	end
-	table.insert(children, body())
 
 	panel.render(ui.column({ flexGrow = 1, gap = 9, padding = 12 }, children))
 end
@@ -422,6 +494,23 @@ end
 
 function onCloseClicked()
 	panel.close()
+end
+
+function onSetupClicked()
+	local plan = setupPlan()
+	if plan.runsInTerminal then
+		request("run_setup")
+	elseif plan.docUrl ~= "" then
+		request("open_docs")
+	end
+end
+
+function onCopyCommand()
+	local plan = setupPlan()
+	if plan.command ~= "" and noctalia.copyToClipboard(plan.command, "text/plain") then
+		copiedAtMs = noctalia.nowMs()
+		render()
+	end
 end
 
 -- Reveal another page from what is held; ask the service for a CLI page only
@@ -472,9 +561,90 @@ function onRowHover(state: string, key: string)
 	if state == "false" and hoveredRowKey ~= key then
 		return
 	end
+	if wanted ~= nil and cursorActive then
+		cursorActive = false
+		hoveredRowKey = wanted
+		render()
+		return
+	end
 	if hoveredRowKey ~= wanted then
 		hoveredRowKey = wanted
 		render()
+	end
+end
+
+-- ── Keys ────────────────────────────────────────────────────────────────────
+-- Only the chords in capture_keys arrive. Escape is never one of them: the
+-- host reserves it to dismiss the panel. Arrows keep auto-repeat on purpose;
+-- `r` is debounced through heldChord so holding it refreshes once.
+
+local function openSelected()
+	local all = listItems()
+	local item = all[selectedIndex]
+	if item == nil or selectedIndex > visibleCount then
+		return
+	end
+	request("open", { accountId = item.accountId, id = item.id })
+	panel.close()
+end
+
+local function moveCursor(delta: number)
+	local count = math.min(#listItems(), visibleCount)
+	if count == 0 then
+		return
+	end
+	if not cursorActive then
+		-- The first press only reveals the cursor, at the top, as the original.
+		cursorActive = true
+		selectedIndex = 1
+	else
+		selectedIndex = ((selectedIndex - 1 + delta) % count) + 1
+	end
+	hoveredRowKey = nil
+	hoveredKey = nil
+	render()
+end
+
+function onKey(chord: string, pressed: boolean)
+	if not pressed then
+		if heldChord == chord then
+			heldChord = nil
+		end
+		return
+	end
+
+	if chord == "r" then
+		if heldChord == "r" then
+			return
+		end
+		heldChord = "r"
+		request("refresh", { mode = "full" })
+		return
+	end
+
+	if needsSetup() then
+		if chord == "return" then
+			onSetupClicked()
+		end
+		return
+	end
+
+	if chord == "down" then
+		moveCursor(1)
+	elseif chord == "up" then
+		moveCursor(-1)
+	elseif chord == "return" then
+		if cursorActive then
+			openSelected()
+		end
+	elseif chord == "right" then
+		if #(summary.accounts or {}) > 1 then
+			cycleAccount(1)
+		end
+	elseif chord == "left" then
+		if #(summary.accounts or {}) > 1 then
+			cycleAccount(-1)
+		end
 	end
 end
 
@@ -504,6 +674,8 @@ function onOpen(_context)
 	hoveredRowKey = nil
 	visibleCount = PAGE_SIZE
 	phraseTicks = 0
+	retryTicks = 0
+	heldChord = nil
 	lastMinute = -1
 	refreshClock()
 
@@ -551,6 +723,22 @@ function update()
 	if fresh ~= statusWasFresh then
 		statusWasFresh = fresh
 		dirty = true
+	end
+
+	local copied = copiedFresh()
+	if copied ~= copiedShown then
+		copiedShown = copied
+		dirty = true
+	end
+
+	-- Two CLI calls every few seconds while the card is up, instead of a full
+	-- sweep: the probe continues into a fetch by itself once sign-in succeeds.
+	if needsSetup() or summary.probeError == true then
+		retryTicks += 1
+		if retryTicks >= SETUP_RETRY_TICKS then
+			retryTicks = 0
+			request("refresh", { mode = "probe" })
+		end
 	end
 
 	if dirty then
