@@ -157,6 +157,17 @@ do
 
 	local unnamed = model.parseAccounts({ ok = true, data = { { id = 77 } } }, "Account {id}")
 	expect("accounts fallback name", unnamed.accounts[1].name, "Account 77")
+
+	-- Ids reach a shell command: anything but plain digits is dropped.
+	local hostile = model.parseAccounts({ ok = true, data = {
+		{ id = "1$(printf INJECTION_PROOF)" },
+		{ id = "12; rm -rf x" },
+		{ id = "007" },
+		{ id = "0" },
+		{ id = "42" },
+	} })
+	expect("accounts drop non-numeric ids", #hostile.accounts, 1)
+	expect("accounts keep numeric id", hostile.accounts[1].id, "42")
 end
 
 -- ── normalizeItem ───────────────────────────────────────────────────────────

@@ -340,8 +340,8 @@ function fetchNextAccount(gen: number)
 	end
 	local account = entry.account
 
-	-- Safe to interpolate into a shell string: idToString only yields digits,
-	-- and the page is a number.
+	-- Safe to interpolate into a shell string: model.validId only admits
+	-- plain digits, and the page is a number.
 	local page = if entry.page > 1 then ` --page {entry.page}` else ""
 	local command = `basecamp notifications list --account {account.id} --json{page}`
 		.. ` | jq -c '{NOTIFICATIONS_FILTER}'; echo '{END_LINE}'`
