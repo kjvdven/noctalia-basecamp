@@ -491,7 +491,9 @@ local function onAuth(gen: number, result)
 	summary.probeError = false
 	summary.error = ""
 
-	if not summary.authenticated or probeOnly then
+	-- A probe stops here only when data is already held; otherwise the panel
+	-- would show "signed in" over an empty list until the next scheduled refresh.
+	if not summary.authenticated or (probeOnly and summary.updatedAtMs > 0) then
 		stopRefresh(gen)
 		return
 	end
@@ -572,9 +574,9 @@ local function probe(gen: number)
 end
 
 -- mode: "full" always runs, "stale" only when the data is older than the
--- interval, "probe" runs the two probe commands and stops there. One function
--- rather than three actions: all three share the whole chain and differ only in
--- their start condition and stopping point.
+-- interval, "probe" runs the two probe commands and stops there unless no data
+-- has been fetched yet. One function rather than three actions: all three share
+-- the whole chain and differ only in their start condition and stopping point.
 -- The flock lockfile of the original, observed instead of written: the button
 -- stays disabled while a `basecamp auth login` process is alive, and comes back
 -- when it is gone or after SETUP_STALE_MS, so a closed terminal never locks the
