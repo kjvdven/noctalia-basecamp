@@ -122,11 +122,11 @@ function M.idToString(value: any): string
 	return ""
 end
 
--- A Basecamp id is a positive integer. Model.js dropped id 0 for free, because
--- 0 is falsy in JS; in Lua it is truthy, so the check has to be explicit.
+-- A Basecamp id is a positive integer. Ids end up interpolated into shell
+-- commands, so anything that is not plain digits is dropped here, at the source.
 local function validId(value: any): string?
 	local id = M.idToString(value)
-	if id == "" or id == "0" then
+	if not string.match(id, "^[1-9]%d*$") then
 		return nil
 	end
 	return id

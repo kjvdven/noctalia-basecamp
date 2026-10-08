@@ -36,6 +36,9 @@ local REFRESH_WATCHDOG_MS = 120000
 local SETUP_STALE_MS = 300000
 -- Give the terminal time to start before its absence counts as "closed".
 local SETUP_GRACE_MS = 5000
+-- Probe rate after the user pressed sign-in or copy: the terminal takes focus,
+-- the panel closes, and its own 3 s probe tick stops with it.
+local SETUP_POLL_MS = 3000
 
 -- ── Settings ────────────────────────────────────────────────────────────────
 -- getConfig returns whatever is stored, which is not necessarily the declared
@@ -204,6 +207,10 @@ end
 local function setAuthenticated(value: boolean, source: string)
 	if summary.authenticated and not value then
 		noctalia.log(`basecamp: signed out according to {source}`)
+		-- The held list belongs to a session that no longer exists: drop it so
+		-- the bar stops counting it, and so the probe after sign-in fetches again.
+		items = {}
+		summary.updatedAtMs = 0
 	end
 	summary.authenticated = value
 	if value then
@@ -340,8 +347,8 @@ function fetchNextAccount(gen: number)
 	end
 	local account = entry.account
 
-	-- Safe to interpolate into a shell string: idToString only yields digits,
-	-- and the page is a number.
+	-- Safe to interpolate into a shell string: model.validId only admits
+	-- plain digits, and the page is a number.
 	local page = if entry.page > 1 then ` --page {entry.page}` else ""
 	local command = `basecamp notifications list --account {account.id} --json{page}`
 		.. ` | jq -c '{NOTIFICATIONS_FILTER}'; echo '{END_LINE}'`
@@ -491,7 +498,9 @@ local function onAuth(gen: number, result)
 	summary.probeError = false
 	summary.error = ""
 
-	if not summary.authenticated or probeOnly then
+	-- A probe stops here only when data is already held; otherwise the panel
+	-- would show "signed in" over an empty list until the next scheduled refresh.
+	if not summary.authenticated or (probeOnly and summary.updatedAtMs > 0) then
 		stopRefresh(gen)
 		return
 	end
@@ -572,15 +581,34 @@ local function probe(gen: number)
 end
 
 -- mode: "full" always runs, "stale" only when the data is older than the
--- interval, "probe" runs the two probe commands and stops there. One function
--- rather than three actions: all three share the whole chain and differ only in
--- their start condition and stopping point.
+-- interval, "probe" runs the two probe commands and stops there unless no data
+-- has been fetched yet. One function rather than three actions: all three share
+-- the whole chain and differ only in their start condition and stopping point.
 -- The flock lockfile of the original, observed instead of written: the button
 -- stays disabled while a `basecamp auth login` process is alive, and comes back
 -- when it is gone or after SETUP_STALE_MS, so a closed terminal never locks the
 -- user out. Checked on every refresh start because the panel probes every 3 s
 -- while the card is up.
 local setupStartedMs = 0
+local setupWatchUntilMs = 0
+local lastTickWatching = false
+
+local function needsSetup(): boolean
+	return summary.installed ~= true or summary.supported ~= true or summary.authenticated ~= true
+end
+
+local function watchingSetup(): boolean
+	return needsSetup() and noctalia.nowMs() < setupWatchUntilMs
+end
+
+local function applyInterval()
+	noctalia.setUpdateInterval(if watchingSetup() then SETUP_POLL_MS else refreshIntervalMs())
+end
+
+local function startSetupWatch()
+	setupWatchUntilMs = noctalia.nowMs() + SETUP_STALE_MS
+	applyInterval()
+end
 
 local function checkSetupRunning()
 	if summary.setupRunning ~= true then
@@ -833,6 +861,7 @@ local function runSetup()
 	end
 	summary.setupRunning = true
 	setupStartedMs = noctalia.nowMs()
+	startSetupWatch()
 	if not noctalia.runInTerminal(plan.command) then
 		summary.setupRunning = false
 		summary.error = noctalia.tr("error.no_terminal")
@@ -908,6 +937,8 @@ noctalia.state.watch(REQUEST_KEY, function(request)
 		markRead(request.accountId, request.ids)
 	elseif action == "run_setup" then
 		runSetup()
+	elseif action == "watch_setup" then
+		startSetupWatch()
 	elseif action == "open_docs" then
 		openDocs()
 	else
@@ -954,7 +985,7 @@ if type(stored) == "table" then
 	summary.cliVersion = stored.cliVersion or ""
 end
 
-noctalia.setUpdateInterval(refreshIntervalMs())
+applyInterval()
 publish()
 -- The host timer does not fire immediately, so the first read is explicit.
 startRefresh("full")
@@ -965,14 +996,22 @@ function update()
 		summary.refreshing = false
 		publish()
 	end
-	startRefresh("full")
+	local watching = watchingSetup()
+	if watching then
+		startRefresh("probe")
+	elseif not lastTickWatching then
+		-- The tick that closes the window skips: the probe that closed it fetched.
+		startRefresh("full")
+	end
+	lastTickWatching = watching
+	applyInterval()
 end
 
 function onConfigChanged()
 	-- Defining this keeps the service VM alive across a settings edit; without
 	-- it the host restarts the runtime and every timer and cache is lost. So
 	-- every config-derived value must be re-read here.
-	noctalia.setUpdateInterval(refreshIntervalMs())
+	applyInterval()
 
 	-- mark_read_on_open is read here so the setting is provably wired; step 7
 	-- consumes it when a row is opened.

@@ -235,7 +235,8 @@ Requests carry `seq = noctalia.nowMs()`; the service keeps `handledSeq` and igno
 | `mark_read` | `{accountId, ids}` | optimistic flip + queue |
 | `open` | `{accountId, id}` | `xdg-open` the url, then `mark_read` if unread and `mark_read_on_open` |
 | `set_filters` | `{accountId?, tab?}` | validate against the live account list, then publish |
-| `run_setup` | — | `runInTerminal`, gated on `setupRunning` |
+| `run_setup` | — | `runInTerminal`, gated on `setupRunning`; also starts the setup watch |
+| `watch_setup` | — | service probes every 3 s for up to 5 min while setup is incomplete (copy button; the terminal closes the panel, so its own tick cannot) |
 
 One `refresh(mode)` instead of three actions: all three shared the entire chain and differed
 only in their start condition and stop point.
