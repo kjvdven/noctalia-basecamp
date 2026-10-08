@@ -204,6 +204,10 @@ end
 local function setAuthenticated(value: boolean, source: string)
 	if summary.authenticated and not value then
 		noctalia.log(`basecamp: signed out according to {source}`)
+		-- The held list belongs to a session that no longer exists: drop it so
+		-- the bar stops counting it, and so the probe after sign-in fetches again.
+		items = {}
+		summary.updatedAtMs = 0
 	end
 	summary.authenticated = value
 	if value then
