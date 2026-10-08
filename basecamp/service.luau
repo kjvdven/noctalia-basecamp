@@ -488,11 +488,12 @@ local function onAuth(gen: number, result)
 		return
 	end
 
-	-- An expired token is functionally signed out. The original did not check
-	-- this and would have failed every account fetch instead.
+	-- `auth status` never refreshes; the next API call does. Only an expired
+	-- token without a refresh token is signed out.
+	local expired = envelope.data.expired == true and envelope.data.refreshable ~= true
 	setAuthenticated(
-		envelope.data.authenticated == true and envelope.data.expired ~= true,
-		if envelope.data.expired == true then "auth probe (token expired)" else "auth probe"
+		envelope.data.authenticated == true and not expired,
+		if expired then "auth probe (token expired)" else "auth probe"
 	)
 	summary.probed = true
 	summary.probeError = false
