@@ -509,6 +509,7 @@ function onCopyCommand()
 	local plan = setupPlan()
 	if plan.command ~= "" and noctalia.copyToClipboard(plan.command, "text/plain") then
 		copiedAtMs = noctalia.nowMs()
+		request("watch_setup")
 		render()
 	end
 end

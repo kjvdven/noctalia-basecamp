@@ -36,6 +36,9 @@ local REFRESH_WATCHDOG_MS = 120000
 local SETUP_STALE_MS = 300000
 -- Give the terminal time to start before its absence counts as "closed".
 local SETUP_GRACE_MS = 5000
+-- Probe rate after the user pressed sign-in or copy: the terminal takes focus,
+-- the panel closes, and its own 3 s probe tick stops with it.
+local SETUP_POLL_MS = 3000
 
 -- ── Settings ────────────────────────────────────────────────────────────────
 -- getConfig returns whatever is stored, which is not necessarily the declared
@@ -587,6 +590,25 @@ end
 -- user out. Checked on every refresh start because the panel probes every 3 s
 -- while the card is up.
 local setupStartedMs = 0
+local setupWatchUntilMs = 0
+local lastTickWatching = false
+
+local function needsSetup(): boolean
+	return summary.installed ~= true or summary.supported ~= true or summary.authenticated ~= true
+end
+
+local function watchingSetup(): boolean
+	return needsSetup() and noctalia.nowMs() < setupWatchUntilMs
+end
+
+local function applyInterval()
+	noctalia.setUpdateInterval(if watchingSetup() then SETUP_POLL_MS else refreshIntervalMs())
+end
+
+local function startSetupWatch()
+	setupWatchUntilMs = noctalia.nowMs() + SETUP_STALE_MS
+	applyInterval()
+end
 
 local function checkSetupRunning()
 	if summary.setupRunning ~= true then
@@ -839,6 +861,7 @@ local function runSetup()
 	end
 	summary.setupRunning = true
 	setupStartedMs = noctalia.nowMs()
+	startSetupWatch()
 	if not noctalia.runInTerminal(plan.command) then
 		summary.setupRunning = false
 		summary.error = noctalia.tr("error.no_terminal")
@@ -914,6 +937,8 @@ noctalia.state.watch(REQUEST_KEY, function(request)
 		markRead(request.accountId, request.ids)
 	elseif action == "run_setup" then
 		runSetup()
+	elseif action == "watch_setup" then
+		startSetupWatch()
 	elseif action == "open_docs" then
 		openDocs()
 	else
@@ -960,7 +985,7 @@ if type(stored) == "table" then
 	summary.cliVersion = stored.cliVersion or ""
 end
 
-noctalia.setUpdateInterval(refreshIntervalMs())
+applyInterval()
 publish()
 -- The host timer does not fire immediately, so the first read is explicit.
 startRefresh("full")
@@ -971,14 +996,22 @@ function update()
 		summary.refreshing = false
 		publish()
 	end
-	startRefresh("full")
+	local watching = watchingSetup()
+	if watching then
+		startRefresh("probe")
+	elseif not lastTickWatching then
+		-- The tick that closes the window skips: the probe that closed it fetched.
+		startRefresh("full")
+	end
+	lastTickWatching = watching
+	applyInterval()
 end
 
 function onConfigChanged()
 	-- Defining this keeps the service VM alive across a settings edit; without
 	-- it the host restarts the runtime and every timer and cache is lost. So
 	-- every config-derived value must be re-read here.
-	noctalia.setUpdateInterval(refreshIntervalMs())
+	applyInterval()
 
 	-- mark_read_on_open is read here so the setting is provably wired; step 7
 	-- consumes it when a row is opened.
