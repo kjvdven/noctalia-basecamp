@@ -15,7 +15,7 @@
 
 id = "kjvdven/basecamp"
 name = "Basecamp"
-version = "0.1.0"
+version = "0.1.1"
 plugin_api = 24
 author = "kjvdven"
 license = "MIT"
