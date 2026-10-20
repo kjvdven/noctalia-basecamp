@@ -76,6 +76,8 @@
     "last_updated": "Last checked",
     "cli_version": "Basecamp CLI",
     "refresh_hint": "Right click to refresh",
+    "dnd": "Do Not Disturb",
+    "dnd_on": "On, unread count hidden",
     "dismiss": "Mark as read without opening",
     "settings": "Plugin settings",
     "refresh": "Check now"

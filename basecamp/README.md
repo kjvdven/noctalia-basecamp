@@ -32,6 +32,8 @@ beside it. Hover for the unread total, the selected account and the last check.
   Click the red badge on an unread row to mark it as read without opening it.
 - With more than one account, the dropdown in the panel header filters the
   list and the bar count to one account.
+- While Do Not Disturb is on in Noctalia, the mark stays grey and the count is
+  hidden. The panel and the tooltip still show everything.
 - **Load more** at the bottom fetches the next page from Basecamp.
 - Keyboard, while the panel is open: Up and Down walk the list, Return opens
   the selected row, Left and Right switch account, `r` checks Basecamp now.

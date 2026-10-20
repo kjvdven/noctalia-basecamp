@@ -39,6 +39,10 @@ local SETUP_GRACE_MS = 5000
 -- Probe rate after the user pressed sign-in or copy: the terminal takes focus,
 -- the panel closes, and its own 3 s probe tick stops with it.
 local SETUP_POLL_MS = 3000
+-- The service ticks this often to follow the shell's Do Not Disturb, which no
+-- plugin API exposes. Full refreshes keep their own interval (see update()).
+local DND_POLL_MS = 10000
+local DND_TIMEOUT_MS = 2000
 
 -- ── Settings ────────────────────────────────────────────────────────────────
 -- getConfig returns whatever is stored, which is not necessarily the declared
@@ -148,6 +152,7 @@ local summary = {
 	setupRunning = false,
 	accountId = "",
 	canLoadMore = false,
+	dnd = false,
 }
 
 -- Publishing `items` costs a marshal into every open panel, so it only happens
@@ -593,6 +598,7 @@ end
 local setupStartedMs = 0
 local setupWatchUntilMs = 0
 local lastTickWatching = false
+local lastAutoRefreshMs = 0
 
 local function needsSetup(): boolean
 	return summary.installed ~= true or summary.supported ~= true or summary.authenticated ~= true
@@ -603,7 +609,7 @@ local function watchingSetup(): boolean
 end
 
 local function applyInterval()
-	noctalia.setUpdateInterval(if watchingSetup() then SETUP_POLL_MS else refreshIntervalMs())
+	noctalia.setUpdateInterval(if watchingSetup() then SETUP_POLL_MS else DND_POLL_MS)
 end
 
 local function startSetupWatch()
@@ -908,6 +914,21 @@ local function setFilters(accountId: any)
 	end
 end
 
+-- ── Do Not Disturb ──────────────────────────────────────────────────────────
+-- While the shell's DND is on, the bar drops the count and the accent. A failed
+-- check counts as off, so the badge never goes quiet by accident.
+
+local function checkDnd()
+	noctalia.runAsync({ "noctalia", "msg", "notification-dnd-status" }, function(result)
+		local status = (result.stdout or ""):match("^%s*(.-)%s*$")
+		local on = result.exitCode == 0 and not result.timedOut and status == "on"
+		if summary.dnd ~= on then
+			summary.dnd = on
+			publish()
+		end
+	end, DND_TIMEOUT_MS)
+end
+
 -- ── Requests ────────────────────────────────────────────────────────────────
 -- Requests carry a monotonic `seq` so a repeated identical table still counts
 -- as a new request, and two panels on two monitors cannot double-handle one.
@@ -967,7 +988,7 @@ function onIpc(event: string, payload: string?)
 				.. `cli={summary.cliVersion} accounts={#summary.accounts} items={#items} `
 				.. `unread={summary.unreadTotal} refreshing={tostring(summary.refreshing)} `
 				.. `updatedAtMs={summary.updatedAtMs} error="{summary.error}" `
-				.. `canLoadMore={tostring(summary.canLoadMore)} pages={noctalia.json.encode(pages) or "?"}`
+				.. `canLoadMore={tostring(summary.canLoadMore)} dnd={tostring(summary.dnd)} pages={noctalia.json.encode(pages) or "?"}`
 		)
 	end
 end
@@ -984,12 +1005,15 @@ if type(stored) == "table" then
 	summary.accounts = stored.accounts or summary.accounts
 	summary.updatedAtMs = stored.updatedAtMs or 0
 	summary.cliVersion = stored.cliVersion or ""
+	summary.dnd = stored.dnd == true
 end
 
 applyInterval()
 publish()
 -- The host timer does not fire immediately, so the first read is explicit.
+lastAutoRefreshMs = noctalia.nowMs()
 startRefresh("full")
+checkDnd()
 
 function update()
 	if refreshing and noctalia.nowMs() - refreshStartedMs > REFRESH_WATCHDOG_MS then
@@ -997,14 +1021,19 @@ function update()
 		summary.refreshing = false
 		publish()
 	end
+	local now = noctalia.nowMs()
 	local watching = watchingSetup()
 	if watching then
 		startRefresh("probe")
-	elseif not lastTickWatching then
+	elseif lastTickWatching then
 		-- The tick that closes the window skips: the probe that closed it fetched.
+		lastAutoRefreshMs = now
+	elseif now - lastAutoRefreshMs >= refreshIntervalMs() then
+		lastAutoRefreshMs = now
 		startRefresh("full")
 	end
 	lastTickWatching = watching
+	checkDnd()
 	applyInterval()
 end
 

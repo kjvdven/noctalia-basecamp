@@ -7,7 +7,8 @@
 # service -> the only entry that runs `basecamp`. Polls every account in turn,
 #            publishes one snapshot, and executes refresh / mark-read / open /
 #            filter requests that arrive on the request channel.
-# bar     -> the Basecamp logo plus the unread count, coloured when unread.
+# bar     -> the Basecamp logo plus the unread count, coloured when unread and
+#            quiet while the shell's Do Not Disturb is on.
 #            Left click opens the panel, right or middle click refreshes.
 # panel   -> the notification list (unread first) with an account filter, a
 #            Load more button, keyboard navigation, and a setup card when the
