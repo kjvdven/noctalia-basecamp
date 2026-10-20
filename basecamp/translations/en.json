@@ -12,6 +12,10 @@
       "label": "Open command",
       "description": "How a notification is opened. {url} is replaced with the Basecamp link. The command is run directly, not through a shell, so pipes and && do not work; point it at a script if you need those. Change this if your browser opens in the background: a plugin cannot hand it the focus token the shell uses."
     },
+    "mute_on_dnd": {
+      "label": "Quiet during Do Not Disturb",
+      "description": "While Do Not Disturb is on, the bar shows a grey logo without the unread count."
+    },
     "show_count": {
       "label": "Show unread count",
       "description": "Show the number of unread notifications next to the logo in the bar."

@@ -51,6 +51,13 @@ description_key = "settings.mark_read_on_open.description"
 default = true
 
 [[setting]]
+key = "mute_on_dnd"
+type = "bool"
+label_key = "settings.mute_on_dnd.label"
+description_key = "settings.mute_on_dnd.description"
+default = true
+
+[[setting]]
 key = "open_command"
 type = "string"
 label_key = "settings.open_command.label"

@@ -74,6 +74,10 @@ local function markReadOnOpen(): boolean
 	return boolConfig("mark_read_on_open", true)
 end
 
+local function muteOnDnd(): boolean
+	return boolConfig("mute_on_dnd", true)
+end
+
 -- Why this is configurable at all: a plugin cannot make the browser take focus.
 -- The shell can — net::openInBrowser asks Wayland for an xdg-activation token
 -- (WaylandConnection::requestActivationToken) and passes it to the child as
@@ -609,7 +613,8 @@ local function watchingSetup(): boolean
 end
 
 local function applyInterval()
-	noctalia.setUpdateInterval(if watchingSetup() then SETUP_POLL_MS else DND_POLL_MS)
+	local idle = if muteOnDnd() then DND_POLL_MS else refreshIntervalMs()
+	noctalia.setUpdateInterval(if watchingSetup() then SETUP_POLL_MS else idle)
 end
 
 local function startSetupWatch()
@@ -919,6 +924,13 @@ end
 -- check counts as off, so the badge never goes quiet by accident.
 
 local function checkDnd()
+	if not muteOnDnd() then
+		if summary.dnd then
+			summary.dnd = false
+			publish()
+		end
+		return
+	end
 	noctalia.runAsync({ "noctalia", "msg", "notification-dnd-status" }, function(result)
 		local status = (result.stdout or ""):match("^%s*(.-)%s*$")
 		local on = result.exitCode == 0 and not result.timedOut and status == "on"
@@ -1028,7 +1040,9 @@ function update()
 	elseif lastTickWatching then
 		-- The tick that closes the window skips: the probe that closed it fetched.
 		lastAutoRefreshMs = now
-	elseif now - lastAutoRefreshMs >= refreshIntervalMs() then
+	-- Without DND polling the tick is the refresh interval itself; a tick firing a
+	-- hair early must not skip a whole cycle.
+	elseif not muteOnDnd() or now - lastAutoRefreshMs >= refreshIntervalMs() then
 		lastAutoRefreshMs = now
 		startRefresh("full")
 	end
@@ -1042,6 +1056,7 @@ function onConfigChanged()
 	-- it the host restarts the runtime and every timer and cache is lost. So
 	-- every config-derived value must be re-read here.
 	applyInterval()
+	checkDnd()
 
 	-- mark_read_on_open is read here so the setting is provably wired; step 7
 	-- consumes it when a row is opened.

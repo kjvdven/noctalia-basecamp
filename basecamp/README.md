@@ -33,7 +33,8 @@ beside it. Hover for the unread total, the selected account and the last check.
 - With more than one account, the dropdown in the panel header filters the
   list and the bar count to one account.
 - While Do Not Disturb is on in Noctalia, the mark stays grey and the count is
-  hidden. The panel and the tooltip still show everything.
+  hidden (turn off with `mute_on_dnd`). The panel and the tooltip still show
+  everything.
 - **Load more** at the bottom fetches the next page from Basecamp.
 - Keyboard, while the panel is open: Up and Down walk the list, Return opens
   the selected row, Left and Right switch account, `r` checks Basecamp now.
@@ -57,6 +58,7 @@ answers.
 | `refresh_interval` | `int` | `600` | Seconds between automatic checks (60 to 3600). Opening the panel also refreshes when the data is older than this. |
 | `mark_read_on_open` | `bool` | `true` | Clicking a notification marks it as read in Basecamp as well as opening it. |
 | `open_command` | `string` | `xdg-open {url}` | How a notification is opened. `{url}` is replaced with the Basecamp link. The command runs directly, not through a shell, so pipes and `&&` do not work; point it at a script for those. |
+| `mute_on_dnd` | `bool` | `true` | Grey mark without the count while Noctalia's Do Not Disturb is on. Checks the DND state every 10 s. |
 | `show_count` (widget) | `bool` | `true` | Show the number of unread notifications next to the mark in the bar. |
 
 ## IPC
