@@ -7,7 +7,8 @@
 # service -> the only entry that runs `basecamp`. Polls every account in turn,
 #            publishes one snapshot, and executes refresh / mark-read / open /
 #            filter requests that arrive on the request channel.
-# bar     -> the Basecamp logo plus the unread count, coloured when unread.
+# bar     -> the Basecamp logo plus the unread count, coloured when unread and
+#            quiet while the shell's Do Not Disturb is on.
 #            Left click opens the panel, right or middle click refreshes.
 # panel   -> the notification list (unread first) with an account filter, a
 #            Load more button, keyboard navigation, and a setup card when the
@@ -15,7 +16,7 @@
 
 id = "kjvdven/basecamp"
 name = "Basecamp"
-version = "0.1.1"
+version = "0.2.0"
 plugin_api = 24
 author = "kjvdven"
 license = "MIT"
@@ -47,6 +48,13 @@ key = "mark_read_on_open"
 type = "bool"
 label_key = "settings.mark_read_on_open.label"
 description_key = "settings.mark_read_on_open.description"
+default = true
+
+[[setting]]
+key = "mute_on_dnd"
+type = "bool"
+label_key = "settings.mute_on_dnd.label"
+description_key = "settings.mute_on_dnd.description"
 default = true
 
 [[setting]]

@@ -121,6 +121,9 @@ local function updateTooltip(unread: number)
 	local rows = {
 		{ key = noctalia.tr("tooltip.unread"), value = noctalia.trp("unread_count", unread, { count = unread }) },
 	}
+	if summary.dnd == true then
+		table.insert(rows, { key = noctalia.tr("tooltip.dnd"), value = noctalia.tr("tooltip.dnd_on") })
+	end
 	if #(summary.accounts or {}) > 1 then
 		table.insert(rows, { key = noctalia.tr("tooltip.account"), value = accountLabel() })
 	end
@@ -138,10 +141,12 @@ end
 
 local function render()
 	local unread = unreadForSelection()
+	-- The shell's Do Not Disturb quiets the badge; the tooltip still has the count.
+	local muted = summary.dnd == true
 
 	-- A vertical bar has no room for a number beside the logo.
 	local showCount = noctalia.getConfig("show_count") ~= false and not barWidget.isVertical()
-	local count = if showCount and unread > 0 then ` {unread}` else ""
+	local count = if showCount and unread > 0 and not muted then ` {unread}` else ""
 	if iconFamily ~= nil then
 		barWidget.setText(ICON .. count)
 	else
@@ -153,7 +158,7 @@ local function render()
 	-- A setup problem is an error; unread is just news, so it takes the accent.
 	-- Logo and count colour together: a lit-up mark reads better than a grey one
 	-- with a blue number beside it.
-	local role = if needsSetup() then "error" elseif unread > 0 then "primary" else "on_surface"
+	local role = if needsSetup() then "error" elseif unread > 0 and not muted then "primary" else "on_surface"
 	barWidget.setColor(role)
 	barWidget.setGlyphColor(role)
 
